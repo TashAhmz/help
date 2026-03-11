@@ -1,3 +1,24 @@
+def __init__(self, api_key=None, account_id=None):
+    self.api_key     = api_key or os.environ.get("OANDA_API_KEY", "")
+    self.account_id  = account_id or os.environ.get("OANDA_ACCOUNT_ID", "")
+    self.simulator   = PriceSimulator()
+    self.headers     = {}  # always initialise headers
+
+    if self.api_key and HAS_REQUESTS:
+        self.live = True
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept-Datetime-Format": "RFC3339",
+        }
+    else:
+        self.live = False
+        print("[APEX] No API key found — running in simulation mode")
+
+
+
+
+
 def get_city_name(cert_owner):
 
     if not isinstance(cert_owner, str) or not cert_owner.strip():
