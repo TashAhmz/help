@@ -1,280 +1,364 @@
-https://claude.ai/public/artifacts/cb7db231-d66e-4cde-b2d1-802157e76895
+PROJECT: Development of a Quantitative Algorithmic Trading System
 
+1. Project Overview
 
+I want to develop a sophisticated, Python-based algorithmic trading system, starting as a personal trading project with the longer-term ambition of developing it into a scalable quantitative trading operation.
 
+The initial objective is to develop a systematic trading algorithm that identifies profitable opportunities in financial markets by combining fundamental analysis with quantitative momentum indicators.
 
+I want to build something that has the potential to generate supplementary income initially, with the possibility of expanding into a much more sophisticated multi-strategy quantitative trading operation.
 
+This is not intended to be a simplistic trading bot that buys assets whenever their prices increase. I want a properly engineered quantitative trading system, supported by statistical analysis, historical testing, fundamental research and robust risk management.
 
-import numpy as np
-import time
-import math
-import random
-from datetime import datetime, timedelta
-from typing import Optional
-import os
+You should act as a senior quantitative developer, quantitative researcher and Python software engineer throughout this project.
 
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+2. Initial Market Selection
 
-OANDA_BASE_URL = "https://api-fxpractice.oanda.com"
+Our initial market will be US equities and exchange-traded funds (ETFs).
 
-INSTRUMENT_MAP = {
-    "WTI":    "BCO_USD",
-    "BRENT":  "BCO_USD",
-    "NATGAS": "NATGAS_USD",
-    "GOLD":   "XAU_USD",
-    "SILVER": "XAG_USD",
-}
+Potential instruments include:
 
-BASE_PRICES = {
-    "WTI": 78.50, "BRENT": 82.30, "NATGAS": 1.95,
-    "GOLD": 2180.0, "SILVER": 24.50,
-}
+* S&P 500 ETFs.
+* Nasdaq 100 ETFs.
+* Large-cap US equities.
+* Highly liquid technology stocks.
+* Other liquid equities exhibiting strong momentum characteristics.
 
-VOLATILITY = {
-    "WTI": 0.018, "BRENT": 0.016, "NATGAS": 0.035,
-    "GOLD": 0.008, "SILVER": 0.020,
-}
+The reasons for selecting this market are:
 
+* Accessibility of historical market data.
+* High liquidity in major instruments.
+* Availability of broker APIs.
+* Relatively straightforward backtesting.
+* Opportunities to investigate momentum-based strategies.
 
-class PriceSimulator:
-    def __init__(self):
-        self.prices = {k: v for k, v in BASE_PRICES.items()}
+In the longer term, I would like the infrastructure to support expansion into:
 
-    def _gbm_step(self, price, vol, dt=1/252):
-        return price * math.exp(np.random.normal(0, vol * math.sqrt(dt)))
+* Foreign exchange.
+* Commodity markets, particularly crude oil and energy.
+* Futures.
+* Other financial instruments.
 
-    def get_candles(self, instrument, count=100):
-        base = BASE_PRICES[instrument]
-        vol = VOLATILITY[instrument]
-        prices = [base]
-        for _ in range(count - 1):
-            prices.append(self._gbm_step(prices[-1], vol * 15))
-        candles = []
-        now = datetime.utcnow()
-        for i, close in enumerate(prices):
-            ts = now - timedelta(minutes=15 * (count - i))
-            open_ = prices[i - 1] if i > 0 else close
-            high = close + abs(np.random.normal(0, close * vol * 0.3))
-            low = close - abs(np.random.normal(0, close * vol * 0.3))
-            candles.append({
-                "time": ts.isoformat(),
-                "mid": {
-                    "o": str(round(open_, 5)),
-                    "h": str(round(max(open_, close, high), 5)),
-                    "l": str(round(min(open_, close, low), 5)),
-                    "c": str(round(close, 5)),
-                }
-            })
-        return {"candles": candles, "instrument": instrument, "granularity": "M15"}
+Design the architecture so that additional asset classes can eventually be incorporated without rebuilding the entire application.
 
-    def get_price(self, instrument):
-        price = self.prices[instrument]
-        self.prices[instrument] = self._gbm_step(price, VOLATILITY[instrument], 1/96)
-        spread = price * 0.0003
-        bid = self.prices[instrument] - spread / 2
-        ask = self.prices[instrument] + spread / 2
-        return {
-            "instrument": instrument,
-            "bid": round(bid, 5),
-            "ask": round(ask, 5),
-            "mid": round((bid + ask) / 2, 5),
-            "time": datetime.utcnow().isoformat(),
-            "status": "tradeable"
-        }
+3. Core Trading Strategy: Fundamentally Informed Momentum
 
-    def get_account(self):
-        return {
-            "id": "DEMO-001",
-            "balance": "100000.00",
-            "currency": "USD",
-            "unrealizedPL": "0.00",
-            "nav": "100000.00",
-            "marginUsed": "0.00",
-            "marginAvailable": "100000.00",
-            "openTradeCount": 0,
-            "alias": "APEX Demo Account",
-        }
+Our initial strategy will combine fundamental analysis and technical/momentum analysis.
 
+The underlying hypothesis is:
 
-class OANDAConnector:
-    def __init__(self, api_key=None, account_id=None):
-        self.api_key = api_key or os.environ.get("OANDA_API_KEY", "")
-        self.account_id = account_id or os.environ.get("OANDA_ACCOUNT_ID", "")
-        self.simulator = PriceSimulator()
-        self.live = False
-        self.headers = {}
+Fundamental analysis helps establish the economic conditions that could support an asset’s price movement, while momentum analysis helps identify whether the market is actually exhibiting that movement.
 
-        if self.api_key and HAS_REQUESTS:
-            self.live = True
-            self.headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "Accept-Datetime-Format": "RFC3339",
-            }
-        else:
-            print("[APEX] No API key — simulation mode")
+We want to investigate whether combining these two approaches produces better risk-adjusted returns than using either approach independently.
 
-    def _get(self, endpoint):
-        if not self.live:
-            return {}
-        url = f"{OANDA_BASE_URL}{endpoint}"
-        resp = requests.get(url, headers=self.headers, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+A. Fundamental Analysis
 
-    def _post(self, endpoint, data):
-        if not self.live:
-            return {}
-        url = f"{OANDA_BASE_URL}{endpoint}"
-        resp = requests.post(url, headers=self.headers, json=data, timeout=10)
-        resp.raise_for_status()
-        return resp.json()
+Initially, investigate incorporating the following variables:
 
-    def get_account(self):
-        if not self.live:
-            return self.simulator.get_account()
-        data = self._get(f"/v3/accounts/{self.account_id}/summary")
-        return data.get("account", {})
+* Revenue growth.
+* Earnings growth.
+* Earnings revisions.
+* Profit margins.
+* Cash flow.
+* Economic indicators.
+* Sector performance.
+* Relevant macroeconomic developments.
 
-    def get_candles(self, instrument, count=100, granularity="M15"):
-        if not self.live:
-            return self.simulator.get_candles(instrument, count)
-        oanda_inst = INSTRUMENT_MAP.get(instrument, instrument)
-        return self._get(
-            f"/v3/instruments/{oanda_inst}/candles"
-            f"?count={count}&granularity={granularity}&price=M"
-        )
+Fundamental data should be incorporated only when its publication and availability dates are known.
 
-    def get_price(self, instrument):
-        if not self.live:
-            return self.simulator.get_price(instrument)
-        oanda_inst = INSTRUMENT_MAP.get(instrument, instrument)
-        data = self._get(f"/v3/accounts/{self.account_id}/pricing?instruments={oanda_inst}")
-        prices = data.get("prices", [{}])[0]
-        bid = float(prices.get("bids", [{"price": 0}])[0]["price"])
-        ask = float(prices.get("asks", [{"price": 0}])[0]["price"])
-        return {"instrument": instrument, "bid": bid, "ask": ask,
-                "mid": (bid + ask) / 2, "time": datetime.utcnow().isoformat(),
-                "status": "tradeable"}
+Avoid look-ahead bias by ensuring the algorithm never uses information that would not have been available at the time of the simulated trade.
 
-    def place_order(self, instrument, units, direction, stop_loss, take_profit):
-        signed_units = units if direction == "BUY" else -units
-        oanda_inst = INSTRUMENT_MAP.get(instrument, instrument)
-        order_body = {
-            "order": {
-                "type": "MARKET",
-                "instrument": oanda_inst,
-                "units": str(signed_units),
-                "stopLossOnFill": {"price": str(round(stop_loss, 5))},
-                "takeProfitOnFill": {"price": str(round(take_profit, 5))},
-                "timeInForce": "FOK",
-            }
-        }
-        if not self.live:
-            price = self.simulator.get_price(instrument)
-            return {"orderFillTransaction": {
-                "id": f"SIM-{int(time.time())}",
-                "instrument": oanda_inst,
-                "units": str(signed_units),
-                "price": str(price["mid"]),
-                "time": datetime.utcnow().isoformat(),
-                "pl": "0.00",
-            }}
-        return self._post(f"/v3/accounts/{self.account_id}/orders", order_body)
+B. Momentum Analysis
 
-    def get_open_trades(self):
-        if not self.live:
-            return []
-        data = self._get(f"/v3/accounts/{self.account_id}/openTrades")
-        return data.get("trades", [])
+Investigate the following indicators:
 
-    def close_trade(self, trade_id):
-        if not self.live:
-            return {"orderFillTransaction": {"pl": str(round(random.gauss(50, 200), 2))}}
-        return self._post(f"/v3/accounts/{self.account_id}/trades/{trade_id}/close", {})
+1. Moving averages:
+    * 20-day moving average.
+    * 50-day moving average.
+    * 200-day moving average.
+2. Relative strength:
+    * Compare individual asset performance against a suitable benchmark, such as the S&P 500.
+3. Rate of change:
+    * Calculate price momentum across different periods.
+4. Trading volume:
+    * Investigate whether increased trading activity confirms price movements.
+5. Volatility:
+    * Measure market volatility to help determine position sizing and risk.
 
+Initially, use transparent, rule-based signals rather than immediately introducing machine learning.
 
+C. Signal Generation
 
+Develop a system that combines fundamental and momentum signals.
 
+For example, a potential long-entry signal could require:
 
+* Positive fundamental outlook.
+* Positive medium-term momentum.
+* Favourable moving-average structure.
+* Positive relative strength.
+* Acceptable volatility.
+* Sufficient liquidity.
 
+These conditions should be configurable rather than hardcoded.
 
+Do not assume that every fundamental indicator improves performance. Test each variable independently and measure its incremental contribution.
 
+Short selling is not required in the initial version.
 
+4. Development Technology
 
-mmm
+Use:
 
+* Python as the primary programming language.
+* Visual Studio Code as the development environment.
+* Pandas for data manipulation.
+* NumPy for numerical calculations.
+* SciPy for statistical analysis.
+* Matplotlib for visualisation.
+* Appropriate backtesting libraries where beneficial.
+* Git and GitHub for version control.
 
+Use clean, modular, maintainable Python code.
 
+Avoid unnecessary complexity and excessive dependencies.
 
+5. Broker Integration
 
+Our intended broker is Interactive Brokers (IBKR).
 
+We want to use its API to:
 
+* Retrieve market data where available.
+* Connect our Python application to the broker.
+* Submit orders.
+* Retrieve account information.
+* Monitor open positions.
+* Retrieve execution information.
 
+Initially, everything must operate in paper-trading mode.
 
-def __init__(self, api_key=None, account_id=None):
-    self.api_key     = api_key or os.environ.get("OANDA_API_KEY", "")
-    self.account_id  = account_id or os.environ.get("OANDA_ACCOUNT_ID", "")
-    self.simulator   = PriceSimulator()
-    self.headers     = {}  # always initialise headers
+Do not enable live trading or introduce real-money execution without explicit approval.
 
-    if self.api_key and HAS_REQUESTS:
-        self.live = True
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "Accept-Datetime-Format": "RFC3339",
-        }
-    else:
-        self.live = False
-        print("[APEX] No API key found — running in simulation mode")
+Consider whether IB Gateway is more appropriate than Trader Workstation for continuous automated operation.
 
+6. Backtesting Infrastructure
 
+This is one of the most important components of the project.
 
+Before connecting the algorithm to a broker, develop a reliable historical backtesting engine.
 
+It should evaluate:
 
-def get_city_name(cert_owner):
+* Historical profitability.
+* Number of trades.
+* Win rate.
+* Average profit per trade.
+* Average loss per trade.
+* Profit factor.
+* Sharpe ratio.
+* Maximum drawdown.
+* Annualised returns.
+* Volatility.
+* Transaction costs.
+* Slippage.
 
-    if not isinstance(cert_owner, str) or not cert_owner.strip():
-        return None
+The backtesting engine must account for:
 
-    exempt_words = ["ltd.", "ltd", "s.i.u",
-                    "s.a.", "s.a", "s.r.o.",
-                    "s.r.o", "s.i.", "s.i",
-                    "s.p.a", "s.p.a.", "s.l.u",
-                    "s.l.u", "a.s", "a.s.",
-                    "s.l", "s.l.", "inc.", "inc",
-                    ". ltd", "-", "oils", "l.p.",
-                    "llc", "l.l.c.", "llc.", "lp", "inc.."]
+* Trading commissions.
+* Bid-ask spreads.
+* Slippage.
+* Market holidays.
+* Corporate actions.
+* Position sizing.
+* Execution assumptions.
 
-    all_parts = [p.strip() for p in cert_owner.split(",") if p.strip()]
+Pay particular attention to:
 
-    # Extract country correctly — always the LAST part
-    country = all_parts[-1].strip().lower() if all_parts else ""
+* Look-ahead bias.
+* Survivorship bias.
+* Overfitting.
+* Data leakage.
+* Unrealistic execution assumptions.
 
-    # Middle parts only (drop company and country)
-    parts = [p.lower() for p in all_parts[1:-1]]
+Use out-of-sample testing and walk-forward validation.
 
-    tokens = [
-        tok
-        for tok in parts
-        if tok
-        and tok not in exempt_words
-        and not any(w in CITY_STOPWORDS for w in tok.split())
-        and not every_word_has_digit(tok)
-        and not (len(tok) == 2 and tok.isupper())  # drop US state codes like TX, IL, CA
-    ]
+Compare our combined fundamental/momentum strategy against:
 
-    if len(tokens) == 1:
-        return " ".join([w for w in tokens[0].split() if not w.isnumeric()]).title()
-    elif len(tokens) >= 2:
-        if country in ("united states", "china"):
-            return " ".join([w for w in tokens[-2].split() if not w.isnumeric()]).title()
-        else:
-            return " ".join([w for w in tokens[-1].split() if not w.isnumeric()]).title()
+1. A simple buy-and-hold benchmark.
+2. A momentum-only strategy.
+3. A fundamental-only strategy.
+4. The combined strategy.
 
-    return None
+We need to establish whether combining fundamentals and momentum genuinely improves performance.
+
+Do not optimise the strategy solely to maximise historical returns.
+
+7. Risk Management
+
+Develop a separate risk-management module.
+
+It should include:
+
+* Maximum position sizes.
+* Position-sizing calculations.
+* Maximum portfolio exposure.
+* Maximum daily losses.
+* Stop-loss mechanisms where appropriate.
+* Volatility-adjusted position sizing.
+* Limits on correlated exposures.
+* Emergency trading shutdown mechanisms.
+
+Initially, use conservative assumptions.
+
+The system should never submit orders if risk checks fail.
+
+8. Software Architecture
+
+Create a modular project structure.
+
+Suggested architecture:
+
+QuantTrading/
+│
+├── data/
+│   ├── market_data.py
+│   └── fundamental_data.py
+│
+├── strategies/
+│   ├── momentum.py
+│   ├── fundamentals.py
+│   └── combined_strategy.py
+│
+├── backtesting/
+│   ├── backtest.py
+│   ├── performance.py
+│   └── validation.py
+│
+├── execution/
+│   ├── broker.py
+│   └── order_manager.py
+│
+├── risk/
+│   └── risk_manager.py
+│
+├── portfolio/
+│   └── portfolio_manager.py
+│
+├── monitoring/
+│   └── logging.py
+│
+├── tests/
+│
+├── config.py
+├── main.py
+└── requirements.txt
+
+You can modify this structure if you identify a better architecture.
+
+9. Cloud Deployment
+
+Initially, development and testing will take place locally on my computer.
+
+Once the system is stable, I intend to deploy it to a cloud-based Linux VPS.
+
+Evoxt is one hosting provider I am considering.
+
+The eventual deployment should allow:
+
+* Continuous algorithm execution.
+* Broker API connectivity.
+* Automated data retrieval.
+* Persistent logging.
+* Automatic recovery after unexpected restarts.
+* Remote monitoring.
+* Alerts when errors occur.
+
+Keep the initial infrastructure lightweight and cost-effective.
+
+Do not introduce expensive cloud infrastructure unless there is a clear technical requirement.
+
+10. Longer-Term Development
+
+Once the initial strategy is operational and has undergone extensive testing, investigate expanding into:
+
+* Multiple independent trading strategies.
+* Statistical arbitrage.
+* More sophisticated momentum models.
+* Machine learning.
+* Portfolio optimisation.
+* Cross-asset strategies.
+* Commodity and energy trading.
+* Automated strategy allocation.
+* Advanced execution algorithms.
+
+The longer-term objective is to build a systematic quantitative trading operation rather than relying on one individual trading algorithm.
+
+11. How I Want You to Work
+
+This section is particularly important.
+
+I am developing my own quantitative finance, programming and algorithmic trading knowledge.
+
+I do not want you simply generating thousands of lines of code without explaining anything.
+
+I want you to act as both my technical development partner and my tutor.
+
+Follow these principles:
+
+1. Build the application incrementally.
+2. Explain the purpose of every major component.
+3. Explain the mathematical principles behind our trading signals.
+4. Explain why you select particular indicators and statistical methods.
+5. Identify weaknesses in our assumptions.
+6. Challenge the strategy when appropriate.
+7. Explain alternative approaches.
+8. Write clean, documented and testable code.
+9. Include appropriate unit tests.
+10. Never claim that a strategy is profitable without sufficient evidence.
+
+When generating code, tell me:
+
+* Which file to create.
+* Where to put the code.
+* What the code does.
+* How to execute it.
+* What output I should expect.
+* How to troubleshoot common errors.
+
+Avoid generating the entire application in one response.
+
+I want to build, test and understand each component before moving to the next.
+
+12. First Task: Begin Development
+
+Start by assessing the proposed architecture and identifying the simplest technically sound way to implement Version 1.0.
+
+Then:
+
+1. Establish the Python development environment.
+2. Create the initial project structure.
+3. Identify suitable free or inexpensive historical market-data sources.
+4. Select a small initial universe of liquid US equities and ETFs.
+5. Build the market-data retrieval module.
+6. Verify that the retrieved data is accurate and correctly structured.
+
+Do not immediately start implementing a complicated trading strategy.
+
+First establish a reliable data pipeline.
+
+Our first milestone is to retrieve historical market data successfully, store it locally and produce a basic visualisation of price movements.
+
+Only then should we proceed to strategy development.
+
+⸻
+
+FINAL OBJECTIVE
+
+Build a properly engineered, statistically evaluated and risk-controlled quantitative trading system.
+
+Prioritise genuine trading performance, robust testing, maintainable software and sound quantitative research over unnecessary complexity.
+
+The objective is not simply to build an algorithm that trades.
+
+The objective is to develop an algorithm that can demonstrate a measurable and potentially exploitable statistical edge.
